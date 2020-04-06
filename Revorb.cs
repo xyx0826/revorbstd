@@ -1,22 +1,36 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using static RevorbStd.Native;
 
 namespace RevorbStd
 {
-    public class Revorb
+    public static class Revorb
     {
-        public static RevorbStream Jiggle(Stream fi)
+        #region ReAllocHGlobal
+        public static IntPtr ReAllocHGlobal(IntPtr pv, ulong cb)
         {
-            byte[] raw = new byte[fi.Length];
-            long pos = fi.Position;
-            fi.Position = 0;
-            fi.Read(raw, 0, raw.Length);
-            fi.Position = pos;
+            return Marshal.ReAllocHGlobal(pv, (IntPtr)cb);
+        }
 
-            IntPtr rawPtr = Marshal.AllocHGlobal(raw.Length);
-            Marshal.Copy(raw, 0, rawPtr, raw.Length);
+        private static readonly ReAlloc _reAlloc = new ReAlloc(ReAllocHGlobal);
+        #endregion
+
+        public static RevorbStream Jiggle(Stream inputFile)
+        {
+            byte[] raw = new byte[inputFile.Length];
+            long pos = inputFile.Position;
+            inputFile.Position = 0;
+            inputFile.Read(raw, 0, raw.Length);
+            inputFile.Position = pos;
+            return Jiggle(raw);
+        }
+
+        public static RevorbStream Jiggle(byte[] raw)
+        {
+            var handle = GCHandle.Alloc(raw, GCHandleType.Pinned);
+            var rawPtr = handle.AddrOfPinnedObject();
 
             REVORB_FILE input = new REVORB_FILE {
                 start = rawPtr,
@@ -33,16 +47,16 @@ namespace RevorbStd
             };
             output.cursor = output.start;
 
-            int result = revorb(ref input, ref output);
+            int result = revorb(ref input, ref output, _reAlloc);
 
-            Marshal.FreeHGlobal(rawPtr);
-
+            handle.Free();
             if (result != REVORB_ERR_SUCCESS)
             {
                 Marshal.FreeHGlobal(output.start);
                 throw new Exception($"Expected success, got {result} -- refer to RevorbStd.Native");
             }
 
+            // output.start to be freed by the stream
             return new RevorbStream(output);
         }
 
@@ -64,6 +78,12 @@ namespace RevorbStd
 
         public static void Main(string[] args)
         {
+            if (args.Contains("-t"))
+            {
+                Test(args[0]);
+                return;
+            }
+
             try
             {
                 using (Stream file = File.OpenRead(args[0]))
@@ -81,6 +101,19 @@ namespace RevorbStd
             catch (Exception e)
             {
                 Console.Error.WriteLine(e.ToString());
+            }
+        }
+
+        public static void Test(string path, int count = 10000, int outSize = 4096)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var raw = File.ReadAllBytes(path);
+                using (var output = Jiggle(raw))
+                {
+                    Console.WriteLine($"#{i + 1}: {output.Length}");
+                    output.Dispose();
+                }
             }
         }
     }
