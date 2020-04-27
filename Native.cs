@@ -27,7 +27,7 @@ namespace RevorbStd
         public const int REVORB_ERR_WRITE_FAIL2 = 11;
 
         [DllImport("librevorb.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int revorb(ref REVORB_FILE fi, ref REVORB_FILE fo, ReAlloc reAlloc);
+        internal static extern int revorb(ref REVORB_FILE fi, ref REVORB_FILE fo);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         public delegate IntPtr ReAlloc(IntPtr pv, ulong cb);

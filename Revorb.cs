@@ -8,16 +8,7 @@ namespace RevorbStd
 {
     public static class Revorb
     {
-        #region ReAllocHGlobal
-        public static IntPtr ReAllocHGlobal(IntPtr pv, ulong cb)
-        {
-            return Marshal.ReAllocHGlobal(pv, (IntPtr)cb);
-        }
-
-        private static readonly ReAlloc _reAlloc = new ReAlloc(ReAllocHGlobal);
-        #endregion
-
-        public static RevorbStream Jiggle(Stream inputFile)
+        public static Stream Jiggle(Stream inputFile)
         {
             byte[] raw = new byte[inputFile.Length];
             long pos = inputFile.Position;
@@ -27,37 +18,37 @@ namespace RevorbStd
             return Jiggle(raw);
         }
 
-        public static RevorbStream Jiggle(byte[] raw)
+        public static Stream Jiggle(byte[] input)
         {
-            var handle = GCHandle.Alloc(raw, GCHandleType.Pinned);
-            var rawPtr = handle.AddrOfPinnedObject();
-
-            REVORB_FILE input = new REVORB_FILE {
-                start = rawPtr,
-                size = raw.Length
+            var hInput = GCHandle.Alloc(input, GCHandleType.Pinned);
+            var pInput = hInput.AddrOfPinnedObject();
+            REVORB_FILE inputFile = new REVORB_FILE {
+                start = pInput,
+                cursor = pInput,
+                size = input.Length
             };
-            input.cursor = input.start;
 
-            IntPtr ptr = Marshal.AllocHGlobal(4096);
-
-            REVORB_FILE output = new REVORB_FILE
+            var output = new byte[input.Length + 4096];
+            var hOutput = GCHandle.Alloc(output, GCHandleType.Pinned);
+            var pOutput = hOutput.AddrOfPinnedObject();
+            REVORB_FILE outputFile = new REVORB_FILE
             {
-                start = ptr,
-                size = 4096
+                start = pOutput,
+                cursor = pOutput,
+                size = output.Length
             };
-            output.cursor = output.start;
 
-            int result = revorb(ref input, ref output, _reAlloc);
+            //int result = revorb(ref input, ref output, _reAlloc);
+            int result = revorb(ref inputFile, ref outputFile);
 
-            handle.Free();
-            if (result != REVORB_ERR_SUCCESS)
+            hInput.Free();
+            hOutput.Free();
+            if (result <= REVORB_ERR_WRITE_FAIL2 && result > REVORB_ERR_SUCCESS)
             {
-                Marshal.FreeHGlobal(output.start);
                 throw new Exception($"Expected success, got {result} -- refer to RevorbStd.Native");
             }
 
-            // output.start to be freed by the stream
-            return new RevorbStream(output);
+            return new MemoryStream(output, 0, result);
         }
 
         public unsafe class RevorbStream : UnmanagedMemoryStream
